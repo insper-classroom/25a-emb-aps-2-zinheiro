@@ -191,7 +191,7 @@ void botao_task(void *p) {
             putchar_raw(ev.codigo);
             putchar_raw(ev.pressionado ? 1 : 0);
             putchar_raw(0xFE);
-            if (ev.codigo == 'R' && ev.pressionado) {
+            if (ev.codigo == 1 && ev.pressionado) {
                 gerar_buzzer_tiro();
             }
         }
@@ -199,13 +199,12 @@ void botao_task(void *p) {
 }
 
 int main() {
-   stdio_init_all();
+    stdio_init_all();
     adc_init();
 
     xQueueADC    = xQueueCreate(32, sizeof(adc_t));
     xQueueBotoes = xQueueCreate(32, sizeof(botao_evento_t));
 
-    // botões
     for (int i = 0; i < 5; i++) {
         gpio_init(BOTAO_GPIOS[i]);
         gpio_set_dir(BOTAO_GPIOS[i], GPIO_IN);
