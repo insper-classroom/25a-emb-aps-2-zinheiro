@@ -8,11 +8,11 @@
 #include "hardware/gpio.h"
 #include <stdbool.h>
 
-#define JANELA             3
+#define JANELA              3
 #define ZONA_MORTA        800
-#define BUZZER_PIN        15
-#define ENABLE_BUTTON_PIN 14  // Botão branco
-#define LED_PIN            2  // Indica fila ativa
+#define BUZZER_PIN         15
+#define ENABLE_BUTTON_PIN  14   // Botão branco
+#define LED_PIN             2   // Indica fila ativa
 
 typedef struct {
     int axis;
@@ -33,7 +33,7 @@ const uint BOTAO_GPIOS[]      = {16, 17, 18, 19, 20};
 const uint8_t BOTOES_CODIGOS[] = {' ', 'R', 1, 2, 'E'};
 
 // Converte leitura ADC em movimento (-50..50) com zona morta
-int converter_adc_para_mouse(int leitura, bool *parado) {
+static int converter_adc_para_mouse(int leitura, bool *parado) {
     int centralizado = leitura - 2048;
     if (abs(centralizado) < ZONA_MORTA) {
         *parado = true;
@@ -47,7 +47,7 @@ int converter_adc_para_mouse(int leitura, bool *parado) {
 }
 
 // Seleciona canal do multiplexador CD4051
-void select_mux_channel(uint8_t channel) {
+static void select_mux_channel(uint8_t channel) {
     gpio_put(11, channel & 0x01);
     gpio_put(12, (channel >> 1) & 0x01);
     gpio_put(13, (channel >> 2) & 0x01);
@@ -55,14 +55,13 @@ void select_mux_channel(uint8_t channel) {
 }
 
 // ISR unificado: botão de enable e botões de jogo
-void gpio_callback(uint gpio, uint32_t events) {
+static void gpio_callback(uint gpio, uint32_t events) {
     BaseType_t woken = pdFALSE;
     uint32_t now = to_ms_since_boot(get_absolute_time());
 
     // Botão de enable
     if (gpio == ENABLE_BUTTON_PIN && (events & GPIO_IRQ_EDGE_FALL)) {
         if (now - last_toggle_ms >= 5000) {
-            // Alterna estado e atualiza LED
             sending_enabled = !sending_enabled;
             gpio_put(LED_PIN, sending_enabled);
             last_toggle_ms = now;
@@ -70,7 +69,7 @@ void gpio_callback(uint gpio, uint32_t events) {
         return;
     }
 
-    // Botões de jogo
+    // Botões de jogo só se enabled
     if (sending_enabled) {
         botao_evento_t evento;
         for (int i = 0; i < 5; i++) {
@@ -85,7 +84,8 @@ void gpio_callback(uint gpio, uint32_t events) {
     }
 }
 
-void gerar_buzzer_tiro() {
+// Gera som de tiro no buzzer
+static void gerar_buzzer_tiro() {
     const int freq_hz     = 2000;
     const int period_us   = 1000000 / freq_hz;
     const int half_us     = period_us / 2;
@@ -99,13 +99,13 @@ void gerar_buzzer_tiro() {
     }
 }
 
-void x_task(void *p) {
+// Task X (eixo horizontal do “mouse”)
+static void x_task(void *p) {
     adc_gpio_init(27);
-    int buffer[JANELA] = {0};
-    int idx = 0;
+    int buffer[JANELA] = {0}, idx = 0;
     bool ultimo_parado = true;
 
-    // Preencher buffer inicial
+    // pré-carregar buffer
     for (int i = 0; i < JANELA; i++) {
         select_mux_channel(2);
         adc_select_input(2);
@@ -118,9 +118,11 @@ void x_task(void *p) {
         adc_select_input(2);
         buffer[idx] = adc_read();
         idx = (idx + 1) % JANELA;
+
         int media = (buffer[0] + buffer[1] + buffer[2]) / JANELA;
         bool parado;
         int convertido = converter_adc_para_mouse(media, &parado);
+
         if (sending_enabled && (!parado || parado != ultimo_parado)) {
             adc_t dado = { .axis = 0, .val = convertido };
             xQueueSend(xQueueADC, &dado, 0);
@@ -130,10 +132,10 @@ void x_task(void *p) {
     }
 }
 
-void y_task(void *p) {
+// Task Y (eixo vertical do “mouse”)
+static void y_task(void *p) {
     adc_gpio_init(27);
-    int buffer[JANELA] = {0};
-    int idx = 0;
+    int buffer[JANELA] = {0}, idx = 0;
     bool ultimo_parado = true;
 
     for (int i = 0; i < JANELA; i++) {
@@ -148,9 +150,11 @@ void y_task(void *p) {
         adc_select_input(2);
         buffer[idx] = adc_read();
         idx = (idx + 1) % JANELA;
+
         int media = (buffer[0] + buffer[1] + buffer[2]) / JANELA;
         bool parado;
         int convertido = converter_adc_para_mouse(media, &parado);
+
         if (sending_enabled && (!parado || parado != ultimo_parado)) {
             adc_t dado = { .axis = 1, .val = convertido };
             xQueueSend(xQueueADC, &dado, 0);
@@ -160,16 +164,16 @@ void y_task(void *p) {
     }
 }
 
-void direcional_task(void *p) {
+// Task direcional (WASD) — envia diretamente pela UART
+static void direcional_task(void *p) {
     adc_gpio_init(27);
     adc_gpio_init(28);
-    int buffer_h[JANELA] = {0};
-    int buffer_v[JANELA] = {0};
-    int idx_h = 0, idx_v = 0;
+    int buffer_h[JANELA] = {0}, idx_h = 0;
+    int buffer_v[JANELA] = {0}, idx_v = 0;
     bool last_h = true, last_v = true;
 
     while (1) {
-        // Horizontal WASD
+        // Horizontal
         select_mux_channel(0);
         adc_select_input(2);
         buffer_h[idx_h] = adc_read();
@@ -188,7 +192,7 @@ void direcional_task(void *p) {
         }
         last_h = ph;
 
-        // Vertical WASD
+        // Vertical
         select_mux_channel(1);
         adc_select_input(2);
         buffer_v[idx_v] = adc_read();
@@ -211,7 +215,8 @@ void direcional_task(void *p) {
     }
 }
 
-void uart_task(void *p) {
+// Task UART: envia pacotes analógicos
+static void uart_task(void *p) {
     adc_t dado;
     while (1) {
         if (xQueueReceive(xQueueADC, &dado, portMAX_DELAY)) {
@@ -224,20 +229,36 @@ void uart_task(void *p) {
     }
 }
 
+// **Task de botões**: consome a fila e envia pacotes B0
+static void botao_task(void *p) {
+    botao_evento_t ev;
+    while (1) {
+        if (xQueueReceive(xQueueBotoes, &ev, portMAX_DELAY)) {
+            putchar_raw(0xB0);
+            putchar_raw(ev.codigo);
+            putchar_raw(ev.pressionado ? 1 : 0);
+            putchar_raw(0xFE);
+            if (ev.codigo == 1 && ev.pressionado) {
+                gerar_buzzer_tiro();
+            }
+        }
+    }
+}
+
 int main() {
     stdio_init_all();
     adc_init();
 
-    // Inicialização de filas
+    // Cria filas
     xQueueADC    = xQueueCreate(32, sizeof(adc_t));
     xQueueBotoes = xQueueCreate(32, sizeof(botao_evento_t));
 
-    // Configura LED indicador
+    // Configura LED
     gpio_init(LED_PIN);
     gpio_set_dir(LED_PIN, GPIO_OUT);
     gpio_put(LED_PIN, 0);
 
-    // Configura botão de enable
+    // Botão de enable
     gpio_init(ENABLE_BUTTON_PIN);
     gpio_set_dir(ENABLE_BUTTON_PIN, GPIO_IN);
     gpio_pull_up(ENABLE_BUTTON_PIN);
@@ -248,7 +269,7 @@ int main() {
         gpio_callback
     );
 
-    // Configura botões de jogo
+    // Botões de jogo
     for (int i = 0; i < 5; i++) {
         gpio_init(BOTAO_GPIOS[i]);
         gpio_set_dir(BOTAO_GPIOS[i], GPIO_IN);
@@ -260,21 +281,19 @@ int main() {
         );
     }
 
-    // Linhas do multiplexador
+    // Linhas do mux e buzzer
     gpio_init(11); gpio_set_dir(11, GPIO_OUT);
     gpio_init(12); gpio_set_dir(12, GPIO_OUT);
     gpio_init(13); gpio_set_dir(13, GPIO_OUT);
-
-    // Buzzer
-    gpio_init(BUZZER_PIN);
-    gpio_set_dir(BUZZER_PIN, GPIO_OUT);
+    gpio_init(BUZZER_PIN); gpio_set_dir(BUZZER_PIN, GPIO_OUT);
     gpio_put(BUZZER_PIN, 0);
 
-    // Cria tasks
-    xTaskCreate(x_task,          "X Task",         2048, NULL, 1, NULL);
-    xTaskCreate(y_task,          "Y Task",         2048, NULL, 1, NULL);
-    xTaskCreate(direcional_task, "Dir Task",       2048, NULL, 1, NULL);
-    xTaskCreate(uart_task,       "UART Task",      2048, NULL, 1, NULL);
+    // Cria todas as tasks
+    xTaskCreate(x_task,           "X Task",    2048, NULL, 1, NULL);
+    xTaskCreate(y_task,           "Y Task",    2048, NULL, 1, NULL);
+    xTaskCreate(direcional_task,  "Dir Task",  2048, NULL, 1, NULL);
+    xTaskCreate(uart_task,        "UART Task", 2048, NULL, 1, NULL);
+    xTaskCreate(botao_task,       "Botao Task",2048, NULL, 1, NULL);
 
     vTaskStartScheduler();
     while (1) tight_loop_contents();
