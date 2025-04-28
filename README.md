@@ -74,7 +74,6 @@ Nosso objetivo é substituir mouse e teclado por um controle dedicado, mais imer
   - `direcional_task`: lê ADC (canais 0–1) para comandos WASD e envia diretamente via UART  
   - `uart_task`: consome `xQueueADC`, empacota bytes e transmite pela UART  
   - `botao_task`: consome `xQueueBotoes`, empacota comandos de botão, transmite via UART e dispara `gerar_buzzer_tiro()` em “atirar”  
-  - `led_task` *(opcional)*: monitora flag de envio (`sending_enabled`) e atualiza LED  
 
 - **Filas (Queues)**  
   - `xQueueADC`: eventos analógicos (`adc_t { axis, val }`)  
