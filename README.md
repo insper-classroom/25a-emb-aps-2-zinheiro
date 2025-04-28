@@ -76,11 +76,11 @@ Nosso objetivo é substituir mouse e teclado por um controle dedicado, mais imer
   - `botao_task`: consome `xQueueBotoes`, empacota comandos de botão, transmite via UART e dispara `gerar_buzzer_tiro()` em “atirar”  
 
 - **Filas (Queues)**  
-  - `xQueueADC`: eventos analógicos (`adc_t { axis, val }`)  
-  - `xQueueBotoes`: eventos de botão (`botao_evento_t { codigo, pressionado }`)  
+  - `xQueueADC`: eventos analógicos  
+  - `xQueueBotoes`: eventos de botão  
 
 - **Semáforos / Flags**  
-  - `sending_enabled` (bool): controla se as tasks enviam comandos  
+  - `sending_enabled`: controla se as tasks enviam comandos  
 
 - **Interrupts**  
   - `gpio_callback()`: callback único para GPIOs de botões e botão ENABLE  
