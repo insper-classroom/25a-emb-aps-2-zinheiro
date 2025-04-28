@@ -1,60 +1,104 @@
-# Controle Customizado para Shell Shockers
+# Controle Customizado para Shell Shockers
 
-Este repositório contém o firmware em C para Raspberry Pi Pico e o script em Python que, juntos, implementam um controle físico para o jogo Shell Shockers.
+Este repositório reúne o firmware em C para Raspberry Pi Pico e o script em Python que, juntos, implementam um controle físico para o jogo **Shell Shockers**.
 
+---
 
-1. Jogo
+## Jogo
 
-Shell Shockers é um jogo de tiro em primeira pessoa que roda em navegador, onde cada jogador controla um ovo armado. O jogo utiliza movimentação de mira (mouse) e comandos de teclado (WASD, espaço, R, etc.). Nosso objetivo é substituir mouse e teclado por um controle físico dedicado.
+**Shell Shockers** – jogo de tiro em primeira pessoa que roda em navegador, onde cada jogador controla um ovo armado. A jogabilidade utiliza:
+- Mira e disparo via mouse  
+- Movimentação e comandos adicionais via teclado (W/A/S/D, espaço, R, etc.)  
 
+Nosso objetivo é substituir mouse e teclado por um controle dedicado, mais imersivo e ergonômico.
 
-2. Ideia do Controle
+---
 
-- Utilizar um Raspberry Pi Pico como microcontrolador.
+## Ideia do Controle
 
-- Ler dois joysticks analógicos (eixos X/Y) multiplexados por um CD4051, totalizando 4 entradas ADC.
+- **Microcontrolador**: Raspberry Pi Pico  
+- **Joysticks**: 2 sticks analógicos, cada um com eixos X/Y, multiplexados por CD4051 → 4 canais ADC  
+- **Botões de Ação** (GPIO 16–20):  
+  1. Mira   
+  2. Atirar   
+  3. Pular   
+  4. Recarregar   
+  5. Trocar de arma   
+- **Botão ENABLE** (GPIO 14): liga/desliga o envio de comandos  
+- **Indicador Visual**: LED (GPIO 2) sinaliza estado do controle ligado  
+- **Feedback Sonoro**: buzzer (GPIO 15) simula som de tiro  
+- **Comunicação**: dados enviados ao PC por UART; script Python usa PyAutoGUI para mover o mouse e disparar cliques
 
-- Ler 5 botões de ação: mira, atirar, pular, recarregar e trocar de arma.
+---
 
-- Botão extra de liga/desliga do envio de comandos.
+## Inputs e Outputs
 
-- Indicador de estado via LED.
+### Entradas (Inputs)
 
-- Feedback sonoro de tiro via buzzer.
+| Dispositivo               | Conexão           |
+|:-------------------------:|:-----------------:|
+| 1 × Joysticks (X/Y)       | ADC via MUX (canais 0 e 3) |
+| 1 × Joysticks (WASD)      | ADC via MUX (canais 1 e 2) |
+| 5 × Botões de Ação        | GPIO 16–20        |
+| 1 × Botão ENABLE          | GPIO 14           |
 
-- Envio dos comandos ao PC via UART.
+### Saídas (Outputs)
 
-- Interpreter em Python lê a serial e converte em movimento de mouse e cliques com PyAutoGUI.
+| Dispositivo              | Conexão           |
+|:------------------------:|:-----------------:|
+| LED Indicador            | GPIO 2            |
+| Buzzer (som de tiro)     | GPIO 15           |
+| UART (pacotes de comando)| USB Serial        |
 
+---
 
-3. Inputs e Outputs
+## Protocolo Utilizado
 
-   - Input:
-     1. Joystick X/Y (2)                                      ---------------> ADC via MUX
-     2. Botoões: mira, atirar, pular, recarregar, trocar arma ---------------> GPIO 16-20
-     3. Botão liga/desliga                                    ---------------> GPIO 14
-    
-  - Output:
-    1. LED                                                    ---------------> GPIO 2
-    2. Buzzer                                                 ---------------> GPIO 15
-   
+- **UART** (Universal Asynchronous Receiver/Transmitter)  
+- **GPIO Interrupts**  
+  - `gpio_callback` para botões de ação e botão ENABLE  
+---
 
-4. Protocolo Utilizado
+### Estrutura Geral
 
+---
+![Diagrama de Blocos](assets/diagrama_de_blocos.jpg)
+---
 
+---
 
-5. Diadrama de blocos
+## Principais Componentes do RTOS
 
+- **Tasks**  
+  - `x_task` / `y_task`: leem ADC de joystick (canais 2–3), calculam média móvel e enviam `adc_t` para `xQueueADC`  
+  - `direcional_task`: lê ADC (canais 0–1) para comandos WASD e envia diretamente via UART  
+  - `uart_task`: consome `xQueueADC`, empacota bytes e transmite pela UART  
+  - `botao_task`: consome `xQueueBotoes`, empacota comandos de botão, transmite via UART e dispara `gerar_buzzer_tiro()` em “atirar”  
+  - `led_task` *(opcional)*: monitora flag de envio (`sending_enabled`) e atualiza LED  
 
-6. Imagem do controle
+- **Filas (Queues)**  
+  - `xQueueADC`: eventos analógicos (`adc_t { axis, val }`)  
+  - `xQueueBotoes`: eventos de botão (`botao_evento_t { codigo, pressionado }`)  
 
+- **Semáforos / Flags**  
+  - `sending_enabled` (bool): controla se as tasks enviam comandos  
 
+- **Interrupts**  
+  - `gpio_callback()`: callback único para GPIOs de botões e botão ENABLE  
 
+---
 
+## Imagens do Controle
 
+### Proposta Inicial
 
+---
+![Proposta](assets/proposta.jpg)
+---
 
+### Controle Final
 
-
-
+---
+![Controle Real](assets/real.jpg)
+---
 
